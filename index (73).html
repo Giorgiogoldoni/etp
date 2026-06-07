@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>COMPASS ETP — Dashboard</title>
+<style>
+:root{
+  --bg:#fff;--ink:#111;--dim:#666;--rule:#e5e5e5;
+  --green:#16a34a;--red:#dc2626;--gold:#b45309;
+  --wt:#2563eb;--l2:#0891b2;--l3:#7c3aed;
+  --tem:#b45309;--full:#1a1a1a;--tim:#16a34a;
+  --iwmo:#dc2626;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'IBM Plex Sans',system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
+header{padding:16px 32px 14px;border-bottom:2px solid var(--ink);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+header h1{font-size:22px;font-weight:700;letter-spacing:-.3px}
+header h1 span{color:var(--l3)}
+.ts{font-size:11px;color:var(--dim);font-family:monospace}
+main{max-width:1400px;margin:0 auto;padding:20px 32px 80px}
+.sec{font-family:monospace;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim);padding:20px 0 10px;border-top:1px solid var(--rule)}
+.sec:first-of-type{border-top:none;padding-top:0}
+
+/* SEGNALI IWMO — strip in testa */
+.segnali-top{display:flex;align-items:center;gap:20px;padding:14px 20px;border-radius:6px;margin-bottom:24px;border:1.5px solid var(--rule)}
+.segnali-top.s0{background:#f0fdf4;border-color:#16a34a30}
+.segnali-top.s1{background:#fffbeb;border-color:#b4530930}
+.segnali-top.s2{background:#fef2f2;border-color:#dc262630}
+.segnali-top.s3{background:#fee2e2;border-color:#dc2626}
+.seg-circle{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:monospace;font-size:18px;font-weight:700;color:#fff;flex-shrink:0}
+.seg-pill{display:inline-block;padding:2px 9px;border-radius:20px;font-family:monospace;font-size:11px;font-weight:600;margin:2px}
+.seg-pill.on{background:#dc2626;color:#fff}
+.seg-pill.off{background:#f0f0f0;color:#666}
+.sc=[0,1,2,3];
+
+/* TABELLA CONFRONTO */
+.compare-table{width:100%;border-collapse:collapse;font-size:13px}
+.compare-table th{padding:9px 12px;text-align:left;font-family:monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);border-bottom:2px solid var(--ink)}
+.compare-table td{padding:10px 12px;border-bottom:1px solid var(--rule);vertical-align:middle}
+.compare-table tr:hover td{background:#fafafa}
+.compare-table tr.iwmo-row td{background:#fff8f8;font-style:italic}
+.linea-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.pos{color:var(--green);font-weight:600}
+.neg{color:var(--red);font-weight:600}
+.badge-ok{display:inline-block;padding:2px 8px;border-radius:2px;background:#dcfce7;color:var(--green);font-family:monospace;font-size:10px;font-weight:700}
+.badge-no{display:inline-block;padding:2px 8px;border-radius:2px;background:#fee2e2;color:var(--red);font-family:monospace;font-size:10px;font-weight:700}
+.badge-seg{display:inline-block;padding:2px 8px;border-radius:2px;font-family:monospace;font-size:10px;font-weight:700;color:#fff}
+
+/* EQUITY CHART */
+canvas{display:block;width:100%}
+
+/* CARDS LINEE */
+.linee-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;margin-top:8px}
+.linea-card{border:1.5px solid var(--rule);border-radius:6px;padding:18px 20px}
+.linea-card h3{font-size:14px;font-weight:700;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+.linea-card .sub{font-size:11px;color:var(--dim);font-family:monospace;margin-bottom:14px}
+.linea-card .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.linea-card .kk{font-size:9px;font-family:monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-bottom:2px}
+.linea-card .vv{font-size:16px;font-weight:700;font-family:monospace}
+.linea-card .ss{font-size:10px;color:var(--dim);font-family:monospace}
+.ptf-mini{font-size:11px;color:var(--dim);border-top:1px solid var(--rule);padding-top:10px;margin-top:4px}
+.ptf-mini .etf-row{display:flex;justify-content:space-between;padding:2px 0;font-family:monospace;font-size:11px}
+.btn-linea{display:inline-block;margin-top:12px;padding:6px 14px;background:var(--ink);color:#fff;border-radius:3px;font-family:monospace;font-size:11px;text-decoration:none;font-weight:600}
+.btn-linea:hover{background:#333}
+
+.loading{padding:60px;text-align:center;color:var(--dim);font-family:monospace;animation:pulse 1.5s infinite}
+.err{padding:24px;text-align:center;color:var(--red);font-family:monospace}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+@media(max-width:900px){header,main{padding-left:16px;padding-right:16px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>COMPASS <span>ETP</span></h1>
+  <span class="ts" id="ts">—</span>
+</header>
+<main>
+  <div id="loading" class="loading">Caricamento 6 linee...</div>
+  <div id="content" style="display:none">
+
+    <!-- SEGNALI IWMO -->
+    <div class="sec" style="padding-top:0;border-top:none">Segnali IWMO oggi — condivisi da tutte le linee</div>
+    <div id="segnali-top"></div>
+
+    <!-- CONFRONTO TABELLA -->
+    <div class="sec">Confronto linee vs IWMO</div>
+    <table class="compare-table">
+      <thead><tr>
+        <th>Linea</th>
+        <th>Descrizione</th>
+        <th>Performance</th>
+        <th>vs IWMO</th>
+        <th>MDD</th>
+        <th>Sharpe 6M</th>
+        <th>Turnover</th>
+        <th>Segnali oggi</th>
+        <th>Batte IWMO</th>
+      </tr></thead>
+      <tbody id="compare-tbody"></tbody>
+    </table>
+
+    <!-- EQUITY CURVE SOVRAPPOSTA -->
+    <div class="sec">Equity curve — tutte le linee vs IWMO</div>
+    <canvas id="c-equity" height="320" style="margin-bottom:8px"></canvas>
+    <div id="legenda-equity" style="display:flex;gap:16px;flex-wrap:wrap;font-family:monospace;font-size:11px;margin-bottom:8px"></div>
+
+    <!-- CARDS LINEE -->
+    <div class="sec">Portafoglio corrente per linea</div>
+    <div class="linee-grid" id="linee-grid"></div>
+
+  </div>
+  <div id="err" class="err" style="display:none"></div>
+</main>
+
+<script>
+const BASE = 'https://giorgiogoldoni.github.io/etp/data/';
+const fmt  = (n,d=1) => n==null?'—':(n>=0?'+':'')+n.toFixed(d)+'%';
+const fmtC = n => n==null?'—':Math.round(n).toLocaleString('it')+'€';
+
+const LINEE = [
+  {id:'wt',      file:'linea_wt.json',      label:'Linea WT',      desc:'6 ETF WisdomTree',                col:'#2563eb'},
+  {id:'2',       file:'linea_2.json',        label:'Linea 2',       desc:'WT + leva 2x',                    col:'#0891b2'},
+  {id:'3',       file:'linea_3.json',        label:'Linea 3',       desc:'WT + leva 2x + leva/short 3x',   col:'#7c3aed'},
+  {id:'tematici',file:'linea_tematici.json', label:'Tematici',      desc:'14 ETF tematici ad alto mom.',    col:'#b45309'},
+  {id:'full',    file:'linea_full.json',      label:'Full',          desc:'~70 ETF, top 15 dinamici',        col:'#1a1a1a'},
+  {id:'timing',  file:'linea_timing.json',   label:'IWMO Timing',   desc:'Solo IWMO + XEON/short KAMA',     col:'#16a34a'},
+];
+
+const SC = ['#16a34a','#b45309','#dc2626','#7f1d1d'];
+
+let DATI = {};
+
+async function load(){
+  try{
+    const results = await Promise.all(
+      LINEE.map(l => fetch(BASE+l.file+'?t='+Date.now())
+        .then(r=>r.ok?r.json():null)
+        .catch(()=>null))
+    );
+    LINEE.forEach((l,i)=>{ if(results[i]) DATI[l.id]=results[i]; });
+
+    const loaded = Object.keys(DATI).length;
+    if(loaded===0) throw new Error('Nessun JSON caricato');
+
+    document.getElementById('loading').style.display='none';
+    document.getElementById('content').style.display='block';
+
+    // Timestamp dal primo JSON disponibile
+    const first = Object.values(DATI)[0];
+    if(first?.generated)
+      document.getElementById('ts').textContent = new Date(first.generated).toLocaleString('it');
+
+    render();
+  }catch(e){
+    document.getElementById('loading').style.display='none';
+    const el=document.getElementById('err');
+    el.style.display='block';
+    el.textContent='Errore: '+e.message;
+  }
+}
+
+function render(){
+  renderSegnali();
+  renderCompare();
+  renderEquity();
+  renderCards();
+}
+
+// ── SEGNALI IWMO ─────────────────────────────────────────────────────────────
+function renderSegnali(){
+  // Prende i segnali dalla prima linea disponibile
+  const d = Object.values(DATI)[0];
+  const seg = d?.segnali_oggi || d?.storia_segnali?.[d.storia_segnali.length-1] || {};
+  const n = seg.n_segnali || 0;
+  const quota = [100,70,30,0][Math.min(n,3)];
+  const pills = [
+    `<span class="seg-pill ${seg.s1?'on':'off'}">S1 Mom1M${seg.s1?'✓':'✗'}</span>`,
+    `<span class="seg-pill ${seg.s2?'on':'off'}">S2 KAMA${seg.s2?'✓':'✗'}</span>`,
+    `<span class="seg-pill ${seg.s3?'on':'off'}">S3 Max60gg${seg.s3?'✓':'✗'}</span>`,
+  ].join('');
+  document.getElementById('segnali-top').innerHTML=`
+    <div class="segnali-top s${n}">
+      <div class="seg-circle" style="background:${SC[n]}">${n}/3</div>
+      <div>
+        <div style="margin-bottom:6px">${pills}</div>
+        <div style="font-family:monospace;font-size:12px;font-weight:600;color:${SC[n]}">${quota}% azionario — ${['Nessun segnale — massima esposizione','1 segnale — riduzione 30%','2 segnali — riduzione 70%','3 segnali — uscita totale'][n]}</div>
+        <div style="font-size:11px;color:var(--dim);margin-top:4px">${seg.descrizione||''}</div>
+      </div>
+    </div>`;
+}
+
+// ── TABELLA CONFRONTO ─────────────────────────────────────────────────────────
+function renderCompare(){
+  const tb = document.getElementById('compare-tbody');
+  // Riga IWMO benchmark
+  const d0 = Object.values(DATI)[0];
+  const bm = d0?.benchmark_perf;
+  if(bm!=null){
+    tb.innerHTML+=`<tr class="iwmo-row">
+      <td><span class="linea-dot" style="background:#dc2626"></span><strong>IWMO.MI</strong></td>
+      <td style="font-size:11px;color:var(--dim)">iShares MSCI World Momentum — benchmark</td>
+      <td class="${bm>=0?'pos':'neg'}">${fmt(bm)}</td>
+      <td style="color:var(--dim)">—</td>
+      <td style="color:var(--dim)">—</td>
+      <td style="color:var(--dim)">—</td>
+      <td style="color:var(--dim)">—</td>
+      <td style="color:var(--dim)">—</td>
+      <td style="color:var(--dim)">benchmark</td>
+    </tr>`;
+  }
+
+  LINEE.forEach(l=>{
+    const d = DATI[l.id]; if(!d) return;
+    const n = d.segnali_oggi?.n_segnali ?? (d.storia_segnali?.[d.storia_segnali.length-1]?.n_segnali ?? 0);
+    const op = d.outperformance;
+    tb.innerHTML+=`<tr>
+      <td><span class="linea-dot" style="background:${l.col}"></span><strong>${l.label}</strong></td>
+      <td style="font-size:11px;color:var(--dim)">${l.desc}</td>
+      <td class="${(d.performance_totale_pct||0)>=0?'pos':'neg'}">${fmt(d.performance_totale_pct)}</td>
+      <td class="${(op||0)>=0?'pos':'neg'}">${op!=null?fmt(op):'—'}</td>
+      <td class="neg">${fmt(d.max_drawdown)}</td>
+      <td>${d.sharpe_6m?d.sharpe_6m.toFixed(2):'n.d.'}</td>
+      <td style="font-family:monospace">${d.turnover_medio!=null?d.turnover_medio.toFixed(0)+'%':'—'}</td>
+      <td><span class="badge-seg" style="background:${SC[Math.min(n,3)]}">${n}/3</span></td>
+      <td>${d.batte_benchmark?'<span class="badge-ok">✅ SÌ</span>':'<span class="badge-no">❌ NO</span>'}</td>
+    </tr>`;
+  });
+}
+
+// ── EQUITY CURVE SOVRAPPOSTA ──────────────────────────────────────────────────
+function renderEquity(){
+  const c = document.getElementById('c-equity');
+  const W = c.parentElement.clientWidth;
+  c.width=W; c.style.width=W+'px';
+  const ctx = c.getContext('2d');
+  const H = 320;
+  const PAD = {l:68,r:20,t:14,b:28};
+  const cw=W-PAD.l-PAD.r, ch=H-PAD.t-PAD.b;
+
+  // Raccoglie tutte le equity mensili
+  const seriesMap = {};
+  LINEE.forEach(l=>{
+    const d=DATI[l.id]; if(!d) return;
+    const eq=d.equity_mensile||[];
+    eq.forEach(e=>{ seriesMap[e.mese] = seriesMap[e.mese]||{}; });
+    seriesMap.__series = seriesMap.__series||[];
+    seriesMap.__series.push({label:l.label, col:l.col, eq});
+  });
+
+  // IWMO simulato dai rendimenti mensili del primo JSON
+  const d0 = Object.values(DATI)[0];
+  const riw = d0?.rend_iwmo_mese||{};
+  let iwmoVal = 100000;
+  const iwmoSeries = [];
+  const allMesi = [...new Set(Object.values(DATI).flatMap(d=>(d.equity_mensile||[]).map(e=>e.mese)))].sort();
+
+  allMesi.forEach(m=>{
+    const [a,mo]=m.split('-');
+    const r=(riw[a]||{})[mo];
+    if(r!=null) iwmoVal=iwmoVal*(1+r/100);
+    iwmoSeries.push({mese:m,valore:iwmoVal});
+  });
+
+  const allVals = [100000, iwmoVal,
+    ...LINEE.flatMap(l=>(DATI[l.id]?.equity_mensile||[]).map(e=>e.valore))].filter(Boolean);
+  const minV = Math.min(...allVals)*0.995;
+  const maxV = Math.max(...allVals)*1.005;
+
+  const sx = i => PAD.l + i/(allMesi.length-1)*cw;
+  const sy = v => PAD.t + (1-(v-minV)/(maxV-minV))*ch;
+
+  ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
+
+  // Griglia
+  for(let i=0;i<=4;i++){
+    const y=PAD.t+ch*i/4;
+    ctx.strokeStyle='#f0f0f0'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(PAD.l,y); ctx.lineTo(W-PAD.r,y); ctx.stroke();
+    ctx.fillStyle='#999'; ctx.font='9px monospace';
+    ctx.fillText(Math.round((maxV-(maxV-minV)*i/4)/1000)+'k€',2,y+4);
+  }
+  // Linea base 100k
+  ctx.strokeStyle='#e5e5e5'; ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(PAD.l,sy(100000)); ctx.lineTo(W-PAD.r,sy(100000)); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // IWMO tratteggiato rosso
+  ctx.strokeStyle='#dc2626'; ctx.lineWidth=1.5; ctx.setLineDash([6,3]);
+  ctx.beginPath();
+  let started=false;
+  iwmoSeries.forEach((e,i)=>{
+    const xi=allMesi.indexOf(e.mese);
+    if(xi<0) return;
+    if(!started){ctx.moveTo(sx(xi),sy(e.valore));started=true;}
+    else ctx.lineTo(sx(xi),sy(e.valore));
+  });
+  ctx.stroke(); ctx.setLineDash([]);
+
+  // Linee portafogli
+  LINEE.forEach(l=>{
+    const d=DATI[l.id]; if(!d) return;
+    const eq=d.equity_mensile||[];
+    ctx.strokeStyle=l.col; ctx.lineWidth=2; ctx.beginPath();
+    let s=false;
+    eq.forEach(e=>{
+      const xi=allMesi.indexOf(e.mese);
+      if(xi<0) return;
+      if(!s){ctx.moveTo(sx(xi),sy(e.valore));s=true;}
+      else ctx.lineTo(sx(xi),sy(e.valore));
+    });
+    ctx.stroke();
+    // Etichetta finale
+    const last=eq[eq.length-1];
+    if(last){
+      const xi=allMesi.indexOf(last.mese);
+      if(xi>=0){
+        ctx.fillStyle=l.col; ctx.font='bold 9px monospace';
+        ctx.fillText(fmtC(last.valore),sx(xi)+4,sy(last.valore));
+      }
+    }
+  });
+
+  // Label X
+  ctx.fillStyle='#999'; ctx.font='9px monospace';
+  allMesi.forEach((m,i)=>{if(i%3===0||i===allMesi.length-1) ctx.fillText(m.slice(2),sx(i)-10,H-PAD.b+14);});
+
+  // Legenda
+  const leg = document.getElementById('legenda-equity');
+  leg.innerHTML='';
+  [{label:'IWMO',col:'#dc2626',dash:true},
+   ...LINEE.filter(l=>DATI[l.id])
+  ].forEach(l=>{
+    leg.innerHTML+=`<span style="display:flex;align-items:center;gap:5px">
+      <span style="display:inline-block;width:18px;height:2px;background:${l.col};${l.dash?'border-top:2px dashed '+l.col+';background:transparent':''}"></span>
+      ${l.label}
+    </span>`;
+  });
+}
+
+// ── CARDS LINEE ───────────────────────────────────────────────────────────────
+function renderCards(){
+  const grid = document.getElementById('linee-grid');
+  LINEE.forEach(l=>{
+    const d=DATI[l.id]; if(!d) return;
+    const comp=(d.composizione_corrente||[]).filter(p=>p.ticker!=='XEON.MI').slice(0,5);
+    const op=d.outperformance;
+    const n=d.segnali_oggi?.n_segnali ?? (d.storia_segnali?.[d.storia_segnali.length-1]?.n_segnali??0);
+    const ptfHtml=comp.map(p=>`
+      <div class="etf-row">
+        <span style="font-weight:600">${p.ticker}</span>
+        <span>${(p.peso||0).toFixed(1)}%</span>
+        <span style="color:${(p.mom6m||0)>=0?'var(--green)':'var(--red)'}">${p.mom6m!=null?fmt(p.mom6m):'—'}</span>
+        <span style="color:var(--dim);font-size:10px">${p.azione||''}</span>
+      </div>`).join('');
+    grid.innerHTML+=`
+      <div class="linea-card" style="border-color:${l.col}40">
+        <h3>
+          <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${l.col}"></span>
+          ${l.label}
+          <span class="badge-seg" style="background:${SC[Math.min(n,3)]};font-size:10px;padding:1px 7px">${n}/3</span>
+        </h3>
+        <div class="sub">${l.desc}</div>
+        <div class="kpis">
+          <div><div class="kk">Perf</div><div class="vv ${(d.performance_totale_pct||0)>=0?'pos':'neg'}">${fmt(d.performance_totale_pct)}</div><div class="ss">da ${d.backtest_start||'2024-01-01'}</div></div>
+          <div><div class="kk">vs IWMO</div><div class="vv ${(op||0)>=0?'pos':'neg'}">${op!=null?fmt(op):'—'}</div><div class="ss">outperf</div></div>
+          <div><div class="kk">MDD</div><div class="vv neg">${fmt(d.max_drawdown)}</div><div class="ss">max drawdown</div></div>
+          <div><div class="kk">Sharpe 6M</div><div class="vv">${d.sharpe_6m?d.sharpe_6m.toFixed(2):'n.d.'}</div><div class="ss">risk-adj.</div></div>
+          <div><div class="kk">Capitale</div><div class="vv">${fmtC(d.capitale_attuale)}</div><div class="ss">su €100k</div></div>
+          <div><div class="kk">Turnover</div><div class="vv">${d.turnover_medio!=null?d.turnover_medio.toFixed(0)+'%':'—'}</div><div class="ss">per rebal.</div></div>
+        </div>
+        <div class="ptf-mini">
+          <div style="font-size:9px;font-family:monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-bottom:6px">Top posizioni</div>
+          ${ptfHtml}
+        </div>
+      </div>`;
+  });
+}
+
+window.addEventListener('resize',()=>{
+  if(Object.keys(DATI).length>0) renderEquity();
+});
+
+load();
+</script>
+</body>
+</html>
