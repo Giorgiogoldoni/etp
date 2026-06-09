@@ -212,6 +212,8 @@ def run_backtest(etf_data, universo_long, universo_short, n_max,
             cat = etf.get("cat","")
             if cat == "leva_3x": sc = round(sc / 3, 2)
             elif cat == "leva_2x": sc = round(sc / 2, 2)
+            # Cap assoluto score — evita dominanza ETF leva con momentum estremo
+            sc = min(sc, 40.0)
             peso_max = 15 if cat=="leva_3x" else (20 if cat=="leva_2x" else 100)
             cand_long.append({"ticker":t,"nome":etf.get("nome",t),"cat":cat,
                               "sub":etf.get("sub",""),"is_short":False,"score":sc,
@@ -231,19 +233,20 @@ def run_backtest(etf_data, universo_long, universo_short, n_max,
         top_long = [c for c in cand_long if c["score"]>0][:n_max]
         mem_long = [c for c in cand_long if c["score"]<=0]
 
-        # Pesi long
+        # Pesi long — score^1.5 proporzionale
         peso_mem_tot = len(mem_long) * PESO_MEMORIA
-        peso_disp = max(0, 100.0 - peso_mem_tot)
-        tot_wl = sum(c["score"]**PESO_EXP for c in top_long) or 1
+        peso_disp = max(0, 100.0 - peso_mem_tot) * ql  # quota disponibile per i long
+        tot_wl = sum(max(0, c["score"])**PESO_EXP for c in top_long) or 1
         for c in top_long:
-            raw = round(c["score"]**PESO_EXP / tot_wl * peso_disp * ql * 100, 2)
-            c["peso"] = min(raw, c.get("peso_max", 100))
-        # Rinormalizza dopo cap
+            c["peso"] = round(max(0, c["score"])**PESO_EXP / tot_wl * peso_disp, 2)
+            # Cap per ETF a leva
+            c["peso"] = min(c["peso"], c.get("peso_max", 100))
+        # Rinormalizza dopo i cap per mantenere somma corretta
         tot_dopo_cap = sum(c["peso"] for c in top_long) or 1
-        if tot_dopo_cap > 0:
-            factor = (peso_disp * ql) / tot_dopo_cap * 100 / 100
-            # Non rinormalizzare oltre i cap — lascia il residuo a XEON implicitamente
-            pass
+        if tot_dopo_cap > 0 and abs(tot_dopo_cap - peso_disp) > 0.1:
+            factor = peso_disp / tot_dopo_cap
+            for c in top_long:
+                c["peso"] = round(min(c["peso"] * factor, c.get("peso_max", 100)), 2)
         for c in mem_long:
             c["peso"] = round(PESO_MEMORIA * ql, 2)
 
