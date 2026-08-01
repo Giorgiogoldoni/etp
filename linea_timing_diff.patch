@@ -1,0 +1,74 @@
+--- etp_repo/../linea_timing.py	2026-08-01 18:19:47.692432066 +0000
++++ etp_repo/linea_timing.py	2026-08-01 18:24:40.725707564 +0000
+@@ -11,6 +11,7 @@
+ from engine import (fetch_yahoo, closes_at, calc_segnali_iwmo, calc_score,
+                     calc_kama, calc_er, calc_mom, genera_azione,
+                     save_json, calc_bm_perf,
++                    cammina_periodo_con_exit, COOLDOWN_GIORNI,
+                     BACKTEST_START, BENCHMARK, BENCHMARK2, CAPITALE,
+                     REBAL_DAYS, QUOTA_LONG, QUOTA_SHORT, QUOTA_XEON)
+ 
+@@ -36,13 +37,30 @@
+ 
+     versioni=[]; comp_att=[]; capitale=float(CAPITALE); rendimenti={}
+     storia_segnali=[]; data_ing_map={}
++    cooldown_until={}; exit_forzati_log=[]
+ 
+     for idx, rdate in enumerate(rebal_dates):
++        # Cammina il periodo appena concluso applicando l'exit forzato su IWMO
++        if idx > 0 and comp_att and rebal_dates[idx-1] < rdate:
++            prev_date = rebal_dates[idx-1]
++            capitale_prima = capitale
++            capitale, eventi_exit = cammina_periodo_con_exit(
++                etf_data, comp_att, prev_date, rdate, capitale, all_dates,
++                cooldown_until, short_return_bug=False)
++            rendimenti[rdate] = round((capitale/capitale_prima - 1) * 100, 4)
++            if eventi_exit:
++                exit_forzati_log.extend(eventi_exit)
++
+         cl_iwmo = closes_at(etf_data, BENCHMARK, rdate)
+         n_seg, seg = calc_segnali_iwmo(cl_iwmo)
+         storia_segnali.append({"data":rdate,**seg})
+         ql=QUOTA_LONG[min(n_seg,3)]; qs=QUOTA_SHORT[min(n_seg,3)]; qx=QUOTA_XEON[min(n_seg,3)]
+ 
++        # In cooldown dopo un exit forzato: IWMO resta fuori, la sua quota va in XEON
++        if cooldown_until.get(BENCHMARK, "") >= rdate:
++            qx = qx + ql
++            ql = 0.0
++
+         composizione = []
+ 
+         # IWMO long
+@@ -114,23 +132,6 @@
+             else:
+                 c["azione"]="SHORT"; c["commento"]=f"Short attivo — {n_seg} segnali IWMO"
+ 
+-        # Rendimento
+-        if idx>0 and comp_att and rebal_dates[idx-1]<rdate:
+-            prev_date=rebal_dates[idx-1]; ptf_ret=0.0
+-            for pos in comp_att:
+-                t=pos["ticker"]; d=etf_data.get(t)
+-                if not d: continue
+-                n=min(len(d["closes"]),len(d["dates"]))
+-                pp=next((d["closes"][i] for i in range(n-1,-1,-1) if d["dates"][i]<=prev_date),None)
+-                pn=next((d["closes"][i] for i in range(n-1,-1,-1) if d["dates"][i]<=rdate),None)
+-                if pp and pn and pp>0:
+-                    ret=(pn-pp)/pp
+-                    if pos.get("is_short"): ret=-ret
+-                    ptf_ret+=ret*pos["peso"]/100
+-            capitale=round(capitale*(1+ptf_ret),2)
+-            rendimenti[rdate]=round(ptf_ret*100,4)
+-            for c in composizione: c["importo"]=round(capitale*c["peso"]/100,2)
+-
+         comp_att=composizione
+         versioni.append({"data":rdate,"n_segnali":n_seg,"segnali":seg,
+                          "quota_iwmo":round(ql*100),"quota_short":round(qs*100),
+@@ -220,6 +221,8 @@
+         "rendimenti":rendimenti,"equity_mensile":equity_mensile,
+         "storia_segnali":storia_slim,"n_rebalancing":len(versioni),
+         "segnali_oggi":storia_slim[-1] if storia_slim else {},
++        "exit_forzati":exit_forzati_log,
++        "cooldown_attivo":{t:d for t,d in cooldown_until.items() if d >= oggi},
+     }
+ 
+ def main():
