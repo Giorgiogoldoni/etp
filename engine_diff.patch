@@ -1,0 +1,165 @@
+--- engine_originale.py	2026-08-01 17:35:20.650521446 +0000
++++ etp_repo/engine.py	2026-08-01 17:35:12.940684774 +0000
+@@ -23,6 +23,7 @@
+ BENCHMARK        = "IWMO.MI"
+ BENCHMARK2       = "VWCE.DE"
+ REBAL_DAYS       = 10
++COOLDOWN_GIORNI  = 5    # giorni di borsa di esclusione per un ticker dopo un exit forzato
+ PESO_MEMORIA     = 1.0
+ PESO_EXP         = 1.5
+ SOGLIA_ROTAZIONE = 12
+@@ -176,6 +177,89 @@
+     if delta >= -20: return "ATTENZIONE", f"Score {delta:.0f}pt — momentum in indebolimento"
+     return "VENDI", f"Score {delta:.0f}pt — valuta uscita"
+ 
++def giorni_dopo_n(all_dates, data, n):
++    """Ritorna la data che sta N giorni di borsa dopo 'data' nella lista all_dates."""
++    try:
++        idx = all_dates.index(data)
++    except ValueError:
++        posteriori = [d for d in all_dates if d >= data]
++        if not posteriori: return data
++        idx = all_dates.index(posteriori[0])
++    j = min(idx + n, len(all_dates) - 1)
++    return all_dates[j]
++
++
++def cammina_periodo_con_exit(etf_data, composizione, data_inizio, data_fine,
++                              capitale_iniziale, all_dates, cooldown_until):
++    """
++    Cammina giorno per giorno nel periodo (data_inizio, data_fine], applicando
++    un exit forzato sulle posizioni LONG (non short, non memoria/XEON) quando
++    prezzo < KAMA e KAMA in discesa — stessa condizione simmetrica usata per
++    il segnale S2 su IWMO, applicata al singolo titolo.
++    Il capitale liberato da un exit forzato confluisce nel rendimento di
++    XEON.MI fino alla fine del periodo corrente. Le posizioni short seguono
++    lo stesso comportamento di oggi (nessuna modifica di ambito — vedi nota
++    sul bug is_short in sospeso).
++    Aggiorna 'cooldown_until' in place. Ritorna (capitale_finale, eventi_exit).
++    """
++    giorni = [d for d in all_dates if data_inizio < d <= data_fine]
++    if not giorni:
++        return capitale_iniziale, []
++
++    pesi = {c["ticker"]: c["peso"] / 100 for c in composizione}
++    is_short = {c["ticker"]: c.get("is_short", False) for c in composizione}
++    cat = {c["ticker"]: c.get("cat", "") for c in composizione}
++    usciti = set()
++    eventi = []
++    capitale = capitale_iniziale
++
++    prev_prices = {}
++    for t in pesi:
++        cl = closes_at(etf_data, t, data_inizio)
++        if cl: prev_prices[t] = cl[-1]
++    cl_x0 = closes_at(etf_data, "XEON.MI", data_inizio)
++    prev_xeon = cl_x0[-1] if cl_x0 else None
++
++    for giorno in giorni:
++        cl_x = closes_at(etf_data, "XEON.MI", giorno)
++        px_xeon = cl_x[-1] if cl_x else None
++        r_xeon = (px_xeon - prev_xeon) / prev_xeon if (px_xeon and prev_xeon and prev_xeon > 0) else 0.0
++
++        ret_giorno = 0.0
++        for t, peso in pesi.items():
++            if peso <= 0: continue
++            if t in usciti or t == "XEON.MI":
++                ret_giorno += peso * r_xeon
++                continue
++            cl = closes_at(etf_data, t, giorno)
++            if not cl or len(cl) < 12:
++                continue
++            prezzo = cl[-1]
++            pp = prev_prices.get(t)
++            r = (prezzo - pp) / pp if (pp and pp > 0) else 0.0
++            if is_short.get(t): r = -r   # invariato — stesso comportamento del blocco rendimento attuale
++            ret_giorno += peso * r
++            prev_prices[t] = prezzo
++
++            # Controllo exit forzato — solo posizioni long "vere" (non short, non cash)
++            if (not is_short.get(t)) and cat.get(t) != "monetario":
++                kn, kp, kd = calc_kama(cl)
++                if kn is not None and kd is not None and prezzo < kn and kd < 0:
++                    usciti.add(t)
++                    cooldown_until[t] = giorni_dopo_n(all_dates, giorno, COOLDOWN_GIORNI)
++                    eventi.append({
++                        "data": giorno, "ticker": t,
++                        "prezzo": round(prezzo, 4), "kama": round(kn, 4),
++                        "motivo": "Exit forzato: prezzo sotto KAMA con KAMA in discesa",
++                        "cooldown_fino": cooldown_until[t],
++                    })
++
++        if px_xeon: prev_xeon = px_xeon
++        capitale = round(capitale * (1 + ret_giorno), 4)
++
++    return capitale, eventi
++
++
+ # ── BACKTEST ──────────────────────────────────────────────────────────────────
+ def run_backtest(etf_data, universo_long, universo_short, n_max,
+                  backtest_start, oggi, label=""):
+@@ -191,8 +275,19 @@
+     versioni = []; comp_att = []; comp_prec = []
+     capitale = float(CAPITALE); rendimenti = {}
+     storia_segnali = []; data_ingresso_map = {}
++    cooldown_until = {}; exit_forzati_log = []
+ 
+     for idx, rdate in enumerate(rebal_dates):
++        # Cammina il periodo appena concluso applicando gli exit forzati sui long
++        if idx > 0 and comp_att and rebal_dates[idx-1] < rdate:
++            prev_date = rebal_dates[idx-1]
++            capitale_prima = capitale
++            capitale, eventi_exit = cammina_periodo_con_exit(
++                etf_data, comp_att, prev_date, rdate, capitale, all_dates, cooldown_until)
++            rendimenti[rdate] = round((capitale/capitale_prima - 1) * 100, 4)
++            if eventi_exit:
++                exit_forzati_log.extend(eventi_exit)
++
+         # Segnali IWMO
+         cl_iwmo = closes_at(etf_data, BENCHMARK, rdate)
+         n_seg, seg = calc_segnali_iwmo(cl_iwmo)
+@@ -205,6 +300,8 @@
+         cand_long = []
+         for etf in universo_long:
+             t = etf["ticker"]
++            if cooldown_until.get(t, "") >= rdate:
++                continue  # in cooldown dopo un exit forzato, non rieleggibile
+             cl = closes_at(etf_data, t, rdate)
+             if len(cl) < 130: continue
+             sc, ind = calc_score(cl, is_short=False)
+@@ -304,26 +401,6 @@
+                 c["azione"], c["commento"] = genera_azione(
+                     c["ticker"], c["score"], comp_prec, c.get("data_ingresso"))
+ 
+-        # Rendimento periodo precedente
+-        if idx > 0 and comp_att and rebal_dates[idx-1] < rdate:
+-            prev_date = rebal_dates[idx-1]
+-            ptf_ret = 0.0
+-            for pos in comp_att:
+-                t = pos["ticker"]
+-                d = etf_data.get(t)
+-                if not d: continue
+-                n = min(len(d["closes"]),len(d["dates"]))
+-                pp = next((d["closes"][i] for i in range(n-1,-1,-1) if d["dates"][i]<=prev_date), None)
+-                pn = next((d["closes"][i] for i in range(n-1,-1,-1) if d["dates"][i]<=rdate), None)
+-                if pp and pn and pp > 0:
+-                    ret = (pn-pp)/pp
+-                    if pos.get("is_short"): ret = -ret
+-                    ptf_ret += ret * pos["peso"]/100
+-            capitale = round(capitale*(1+ptf_ret), 2)
+-            rendimenti[rdate] = round(ptf_ret*100, 4)
+-            for c in composizione:
+-                c["importo"] = round(capitale*c["peso"]/100, 2)
+-
+         comp_prec = comp_att
+         comp_att  = composizione
+         versioni.append({"data":rdate,"n_segnali":n_seg,"segnali":seg,
+@@ -434,6 +511,8 @@
+         "n_etf_universo_long":len(universo_long),
+         "n_etf_universo_short":len(universo_short),
+         "segnali_oggi":storia_slim[-1] if storia_slim else {},
++        "exit_forzati":exit_forzati_log,
++        "cooldown_attivo":{t:d for t,d in cooldown_until.items() if d >= oggi},
+     }
+ 
+ # ── UTILITÀ ───────────────────────────────────────────────────────────────────
