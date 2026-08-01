@@ -1,0 +1,31 @@
+name: ETP Chart Data
+on:
+  schedule:
+    # 12:00 UTC — a mercati europei aperti, aggiorna le barre orarie intraday
+    - cron: '0 12 * * 1-5'
+    # 17:00 UTC — a mercati europei chiusi (Milano/Xetra/Parigi chiudono ~15:30-15:40 UTC
+    # in estate, ~16:30-16:40 UTC in inverno), barra giornaliera e oraria finali del giorno
+    - cron: '0 17 * * 1-5'
+  workflow_dispatch:
+jobs:
+  fetch-charts:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Installa dipendenze
+        run: pip install yfinance scikit-learn==1.8.0 joblib
+      - name: Esegui ETP Chart Fetch
+        run: python chart_fetch.py
+      - name: Commit e push data/charts/
+        run: |
+          git config user.name  "ETP Bot"
+          git config user.email "etp-bot@noreply.github.com"
+          git add -A data/charts/
+          git diff --staged --quiet || (git commit -m "📈 ETP chart data $(date +'%d/%m/%Y %H:%M')" && git pull --rebase origin main && git push)
