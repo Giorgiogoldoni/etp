@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 linea_timing.py — IWMO Timing v1.0
-Solo IWMO.MI. Uscita progressiva su XEON + short con segnali KAMA.
+Solo IWMO.MI. Uscita progressiva su XEON con segnali KAMA (short disattivato).
 La strategia più semplice e diretta per battere IWMO nel lungo periodo.
 Benchmark: IWMO.MI
 """
@@ -55,6 +55,7 @@ def run_backtest_timing(etf_data, backtest_start, oggi):
         n_seg, seg = calc_segnali_iwmo(cl_iwmo)
         storia_segnali.append({"data":rdate,**seg})
         ql=QUOTA_LONG[min(n_seg,3)]; qs=QUOTA_SHORT[min(n_seg,3)]; qx=QUOTA_XEON[min(n_seg,3)]
+        qx = qx + qs; qs = 0.0   # short disattivato: quota confluisce in XEON
 
         # In cooldown dopo un exit forzato: IWMO resta fuori, la sua quota va in XEON
         if cooldown_until.get(BENCHMARK, "") >= rdate:
@@ -76,9 +77,9 @@ def run_backtest_timing(etf_data, backtest_start, oggi):
                 "kama":round(kn,4) if kn else None,"kama_dir":kd,
             })
 
-        # Short se segnali attivi
+        # Short disattivato — vedi qs=0 sopra; blocco mantenuto ma inerte per riuso futuro
         top_short = []
-        if n_seg > 0:
+        if qs > 0 and n_seg > 0:
             cand_short=[]
             for etf in UNIVERSO_SHORT:
                 t=etf["ticker"]; cl=closes_at(etf_data,t,rdate)
@@ -203,7 +204,7 @@ def run_backtest_timing(etf_data, backtest_start, oggi):
         if v["data"] in rendimenti: pps[str(v["n_segnali"])].append(rendimenti[v["data"]])
     perf_step={ns:{"media_sett":round(sum(r)/len(r),3),"n":len(r),
                    "positivi":sum(1 for x in r if x>0),
-                   "label":["100% IWMO","70% IWMO","30% IWMO","100% XEON/short"][min(int(ns),3)]}
+                   "label":["100% IWMO","70% IWMO","30% IWMO","100% XEON"][min(int(ns),3)]}
                for ns,r in pps.items()}
     storia_slim=[{k:v[k] for k in ["data","n_segnali","s1","s2","s3","quota_az_pct","descrizione"] if k in v}
                  for v in storia_segnali]
@@ -262,7 +263,7 @@ def main():
     output={
         "generated":datetime.datetime.utcnow().isoformat(),
         "version":"linea_timing_1.0","run_number":run_number,
-        "linea":"Timing","descrizione":"Solo IWMO + XEON/short con segnali KAMA",
+        "linea":"Timing","descrizione":"Solo IWMO + XEON con segnali KAMA (short disattivato)",
         "benchmark":BENCHMARK,"benchmark2":BENCHMARK2,
         "benchmark_perf":bm1,"benchmark2_perf":bm2,
         "outperformance":op1,"outperformance2":op2,
@@ -270,7 +271,7 @@ def main():
         **risultato,
     }
     save_json(output,OUT_FILE)
-    print(f"\n  Posizione: {seg['quota_az_pct']}% IWMO | {round(QUOTA_SHORT[min(n_seg,3)]*100)}% short | {round(QUOTA_XEON[min(n_seg,3)]*100)}% XEON")
+    print(f"\n  Posizione: {seg['quota_az_pct']}% IWMO | {round((QUOTA_SHORT[min(n_seg,3)]+QUOTA_XEON[min(n_seg,3)])*100)}% XEON (short disattivato)")
 
 if __name__=="__main__":
     main()
