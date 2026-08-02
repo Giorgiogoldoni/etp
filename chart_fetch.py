@@ -310,6 +310,17 @@ def process_ticker(info):
                                           sarBull_arr, cross_arr, mm_arr, rsi_arr)
         sarStreak_arr = calc_sar_streak_array(sarBull_arr)
 
+        # ── Segnale attuale + data di inizio (per riepilogo leggero in index.json) ──
+        segnale_attuale = segnale_arr[-1] if segnale_arr else None
+        segnale_dal = None
+        if segnale_attuale is not None:
+            segnale_dal = dates[-1]
+            for k in range(len(segnale_arr) - 1, -1, -1):
+                if segnale_arr[k] == segnale_attuale:
+                    segnale_dal = dates[k]
+                else:
+                    break
+
         # ── Indicatori su hourly (stesso set, serve al pannello prezzo per tf 5h/1d) ──
         kama_h, sar_h, sarBull_h = [], [], []
         if len(h_bars) > 12:
@@ -357,6 +368,7 @@ def process_ticker(info):
             'atr': round(atr,4) if atr else None,
             'renko_brick': brick, 'renko': renko,
             'ml_exit': ml_exit,
+            'segnale_attuale': segnale_attuale, 'segnale_dal': segnale_dal,
         }
         return sanitize_nan(result)
     except Exception as e:
@@ -381,7 +393,8 @@ def main():
             fname = info['y'].replace('.', '_') + '.json'
             with open(f"data/charts/{fname}", 'w', encoding='utf-8') as f:
                 json.dump(result, f, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
-            index.append({'t': info['t'], 'y': info['y'], 'f': fname})
+            index.append({'t': info['t'], 'y': info['y'], 'f': fname,
+                          'segnale': result.get('segnale_attuale'), 'segnale_dal': result.get('segnale_dal')})
             ok += 1
         else:
             errors += 1
