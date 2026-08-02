@@ -159,12 +159,12 @@ const fmtC = n => n==null?'—':Math.round(n).toLocaleString('it')+'€';
 const LINEE = [
   {id:'wt',      file:'linea_wt.json',      label:'Linea WT',      desc:'6 ETF WisdomTree long',           col:'#2563eb'},
   {id:'2',       file:'linea_2.json',        label:'Linea 2',       desc:'WT + leva 2x long',               col:'#0891b2'},
-  {id:'3',       file:'linea_3.json',        label:'Linea 3',       desc:'WT + leva 2x + leva/short 3x',   col:'#7c3aed'},
+  {id:'3',       file:'linea_3.json',        label:'Linea 3',       desc:'WT + leva 2x + leva 3x long',    col:'#7c3aed'},
   {id:'tematici',file:'linea_tematici.json', label:'Tematici',      desc:'14 ETF tematici ad alto mom.',    col:'#b45309'},
   {id:'full',    file:'linea_full.json',      label:'Full',          desc:'~70 ETF, top 15 dinamici',        col:'#1a1a1a'},
-  {id:'timing',  file:'linea_timing.json',   label:'IWMO Timing',   desc:'Solo IWMO + XEON/short KAMA',     col:'#16a34a'},
+  {id:'timing',  file:'linea_timing.json',   label:'IWMO Timing',   desc:'Solo IWMO + XEON',                col:'#16a34a'},
 ];
-const OVERLAY_NOTE = 'Tutte le linee condividono lo stesso overlay difensivo short/cash sui segnali IWMO — la composizione "long" qui sopra descrive solo la parte azionaria.';
+const OVERLAY_NOTE = 'Tutte le linee condividono lo stesso overlay difensivo: sui segnali IWMO la quota si sposta su XEON (cash) — nessuna componente short attiva.';
 
 const SC = ['#16a34a','#b45309','#dc2626','#7f1d1d'];
 
