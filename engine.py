@@ -263,7 +263,7 @@ def cammina_periodo_con_exit(etf_data, composizione, data_inizio, data_fine,
 
 # ── BACKTEST ──────────────────────────────────────────────────────────────────
 def run_backtest(etf_data, universo_long, universo_short, n_max,
-                 backtest_start, oggi, label=""):
+                 backtest_start, oggi, label="", abilita_short=True):
     all_dates = sorted(set(
         d for data in etf_data.values()
         for d in data.get("dates",[])
@@ -296,6 +296,9 @@ def run_backtest(etf_data, universo_long, universo_short, n_max,
         ql = QUOTA_LONG[min(n_seg,3)]
         qs = QUOTA_SHORT[min(n_seg,3)]
         qx = QUOTA_XEON[min(n_seg,3)]
+        if not abilita_short:
+            qx = qx + qs   # la quota short confluisce in cash
+            qs = 0.0
 
         # Score long
         cand_long = []
@@ -348,9 +351,9 @@ def run_backtest(etf_data, universo_long, universo_short, n_max,
         for c in mem_long:
             c["peso"] = round(PESO_MEMORIA * ql, 2)
 
-        # Score short (solo se segnali attivi)
+        # Score short (solo se segnali attivi e abilita_short=True)
         top_short = []
-        if n_seg > 0 and universo_short:
+        if abilita_short and n_seg > 0 and universo_short:
             cand_short = []
             for etf in universo_short:
                 t = etf["ticker"]
