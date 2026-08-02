@@ -67,7 +67,8 @@ def main():
     print(f"\n[2/3] Backtest Linea 3 (da {BACKTEST_START})...")
     risultato = run_backtest(
         etf_data, UNIVERSO_LONG, UNIVERSO_SHORT,
-        n_max=10, backtest_start=BACKTEST_START, oggi=oggi, label="Linea 3"
+        n_max=10, backtest_start=BACKTEST_START, oggi=oggi, label="Linea 3",
+        abilita_short=False
     )
     print(f"  Perf: {risultato['performance_totale_pct']:+.1f}% | MDD: {risultato['max_drawdown']:.1f}%")
 
