@@ -23,24 +23,22 @@ UNIVERSO_LONG = [
     {"ticker":"WSPX.MI","nome":"WT S&P 500",                    "cat":"az_usa",   "sub":"US"},
     # Leva 2x
     {"ticker":"2TRV.MI","nome":"WT Travel 2x Lev",              "cat":"leva_2x",  "sub":"TRAVEL"},
-    {"ticker":"2CAR.MI","nome":"WT Carbon 2x Lev",              "cat":"leva_2x",  "sub":"CARBON"},
-    {"ticker":"2OIG.MI","nome":"WT Oil & Gas 2x Lev",           "cat":"leva_2x",  "sub":"OIL_GAS"},
-    {"ticker":"2STR.MI","nome":"WT Storage 2x Lev",             "cat":"leva_2x",  "sub":"STORAGE"},
+    {"ticker":"2CAR.MI","nome":"WT Automobiles 2x Lev",              "cat":"leva_2x",  "sub":"AUTO"},
     # Leva 3x long
-    {"ticker":"3EDF.MI","nome":"WT EDF 3x Lev",                 "cat":"leva_3x",  "sub":"EDF"},
+    {"ticker":"3EDF.MI","nome":"WT Aerospace & Defence 3x Lev",                 "cat":"leva_3x",  "sub":"AERO_DEF"},
     {"ticker":"3EUL.MI","nome":"WT Euro Stoxx 50 3x Lev",       "cat":"leva_3x",  "sub":"EU_LEV"},
-    {"ticker":"3BAL.MI","nome":"WT BAT 3x Lev",                 "cat":"leva_3x",  "sub":"BAT"},
+    {"ticker":"3BAL.MI","nome":"WT Banks 3x Lev",                 "cat":"leva_3x",  "sub":"BANKS"},
     {"ticker":"3USL.MI","nome":"WT S&P 500 3x Lev",             "cat":"leva_3x",  "sub":"US_LEV"},
     {"ticker":"QQQ3.MI","nome":"WT Nasdaq 3x Lev",              "cat":"leva_3x",  "sub":"NAS_LEV"},
     {"ticker":"3MG7.MI","nome":"WT MSCI G7 3x Lev",             "cat":"leva_3x",  "sub":"G7_LEV"},
-    {"ticker":"3SEM.MI","nome":"WT MSCI EM 3x Lev",             "cat":"leva_3x",  "sub":"EM_LEV"},
+    {"ticker":"3SEM.MI","nome":"WT Semiconductor 3x Lev",             "cat":"leva_3x",  "sub":"SEMI_LEV"},
 ]
 
 UNIVERSO_SHORT = [
     {"ticker":"3EDS.MI","nome":"WT EDF 3x Short",           "cat":"short","sub":"SHORT_EDF"},
     {"ticker":"3EUS.MI","nome":"WT Euro Stoxx 50 3x Short",  "cat":"short","sub":"SHORT_EU"},
     {"ticker":"3BAS.MI","nome":"WT BAT 3x Short",            "cat":"short","sub":"SHORT_BAT"},
-    {"ticker":"3DEL.MI","nome":"WT Deutsche Bank 3x Lev",    "cat":"leva_3x","sub":"DB_LEV"},
+    {"ticker":"3DEL.MI","nome":"WT DAX 3x Lev",    "cat":"leva_3x","sub":"DAX_LEV"},
     {"ticker":"3DES.MI","nome":"WT Deutsche Bank 3x Short",  "cat":"short","sub":"SHORT_DB"},
     {"ticker":"3ITL.MI","nome":"WT Italy 3x Lev",            "cat":"leva_3x","sub":"IT_LEV"},
     {"ticker":"3ITS.MI","nome":"WT Italy 3x Short",          "cat":"short","sub":"SHORT_IT"},
