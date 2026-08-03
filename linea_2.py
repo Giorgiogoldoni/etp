@@ -22,9 +22,7 @@ UNIVERSO_LONG = [
     {"ticker":"WSPX.MI","nome":"WT S&P 500",                    "cat":"az_usa",   "sub":"US"},
     # Leva 2x settoriali
     {"ticker":"2TRV.MI","nome":"WT Travel 2x Lev",              "cat":"leva_2x",  "sub":"TRAVEL"},
-    {"ticker":"2CAR.MI","nome":"WT Carbon 2x Lev",              "cat":"leva_2x",  "sub":"CARBON"},
-    {"ticker":"2OIG.MI","nome":"WT Oil & Gas 2x Lev",           "cat":"leva_2x",  "sub":"OIL_GAS"},
-    {"ticker":"2STR.MI","nome":"WT Storage 2x Lev",             "cat":"leva_2x",  "sub":"STORAGE"},
+    {"ticker":"2CAR.MI","nome":"WT Automobiles 2x Lev",              "cat":"leva_2x",  "sub":"AUTO"},
 ]
 
 UNIVERSO_SHORT = [
