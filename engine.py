@@ -8,9 +8,9 @@ Logica comune condivisa da tutte le linee:
   - Segnali uscita su IWMO (S1/S2/S3)
   - Score: mom6M×0.40 + mom3M×0.35 + mom1M×0.25 × ER × KAMA
   - Backtest ogni 10 giorni con pesi score^1.5
-  - Short: attivi solo con segnali KAMA
   - Peso minimo 1% memoria per score negativo
-Benchmark: IWMO.MI — Backtest: 2024-01-01
+  - Short disattivato: nessuna linea apre posizioni short (quota confluisce in XEON)
+Benchmark: IWMO.MI (+ VWCE.DE, IS3S.DE di confronto) — Backtest: 2024-01-01
 """
 
 import json, math, datetime, time, urllib.request
@@ -22,6 +22,7 @@ BACKTEST_START   = "2024-01-01"
 CAPITALE         = 100_000
 BENCHMARK        = "IWMO.MI"
 BENCHMARK2       = "VWCE.DE"
+BENCHMARK3       = "IS3S.DE"  # iShares Edge MSCI World Value Factor (IWVL), quotato su Xetra in EUR
 REBAL_DAYS       = 10
 COOLDOWN_GIORNI  = 5    # giorni di borsa di esclusione per un ticker dopo un exit forzato
 PESO_MEMORIA     = 1.0
@@ -29,8 +30,8 @@ PESO_EXP         = 1.5
 SOGLIA_ROTAZIONE = 12
 
 QUOTA_LONG  = {0: 1.00, 1: 0.70, 2: 0.30, 3: 0.00}
-QUOTA_SHORT = {0: 0.00, 1: 0.15, 2: 0.35, 3: 0.60}
-QUOTA_XEON  = {0: 0.00, 1: 0.15, 2: 0.35, 3: 0.40}
+# Short disattivato: la quota un tempo destinata allo short confluisce in XEON
+QUOTA_XEON  = {0: 0.00, 1: 0.30, 2: 0.70, 3: 1.00}
 
 # ── DOWNLOAD ──────────────────────────────────────────────────────────────────
 def fetch_yahoo(ticker, days=900):
@@ -114,7 +115,7 @@ def calc_kama(closes, period=10, fast=2, slow=30):
 def calc_segnali_iwmo(closes_iwmo):
     if not closes_iwmo or len(closes_iwmo) < 130:
         return 0, {"s1":False,"s2":False,"s3":False,"n_segnali":0,
-                   "quota_long":1.0,"quota_short":0.0,"quota_xeon":0.0,
+                   "quota_long":1.0,"quota_xeon":0.0,
                    "quota_az_pct":100,"descrizione":"Dati insufficienti",
                    "mom1m_iwmo":None,"kama_iwmo":None,"kama_dir_iwmo":0,"price_iwmo":None}
     price = closes_iwmo[-1]
@@ -131,17 +132,16 @@ def calc_segnali_iwmo(closes_iwmo):
     if kn: desc.append(f"S2{'✓' if s2 else '✗'} Prezzo={price:.2f} KAMA={kn:.2f}{'↑' if kd>0 else '↓' if kd<0 else '→'}")
     if pct is not None: desc.append(f"S3{'✓' if s3 else '✗'} -{pct:.1f}% da max60gg")
     return n, {"s1":s1,"s2":s2,"s3":s3,"n_segnali":n,
-               "quota_long":QUOTA_LONG[min(n,3)],"quota_short":QUOTA_SHORT[min(n,3)],
+               "quota_long":QUOTA_LONG[min(n,3)],
                "quota_xeon":QUOTA_XEON[min(n,3)],"quota_az_pct":round(QUOTA_LONG[min(n,3)]*100),
                "mom1m_iwmo":round(m1,2) if m1 else None,"kama_iwmo":round(kn,4) if kn else None,
                "kama_dir_iwmo":kd,"price_iwmo":round(price,4),"descrizione":" | ".join(desc)}
 
 # ── SCORE ─────────────────────────────────────────────────────────────────────
-def calc_score(closes, is_short=False):
+def calc_score(closes):
     if not closes or len(closes) < 130: return None, {}
     m6 = calc_mom(closes,126); m3 = calc_mom(closes,63); m1 = calc_mom(closes,21)
     if None in (m6,m3,m1): return None, {}
-    if is_short: m6,m3,m1 = -m6,-m3,-m1
     score_base = m6*0.40 + m3*0.35 + m1*0.25
     er = calc_er(closes)
     mult_er = 1.15 if er>=0.6 else (0.85 if er<0.4 else 1.0)
@@ -153,9 +153,9 @@ def calc_score(closes, is_short=False):
     else:                      mult_kama = 1.0
     sf = round(score_base*mult_er*mult_kama, 2)
     return sf, {
-        "mom6m":round(m6 if not is_short else -m6,2),
-        "mom3m":round(m3 if not is_short else -m3,2),
-        "mom1m":round(m1 if not is_short else -m1,2),
+        "mom6m":round(m6,2),
+        "mom3m":round(m3,2),
+        "mom1m":round(m1,2),
         "er":round(er,3),"kama":round(kn,4) if kn else None,
         "kama_dir":kd,"mult_er":round(mult_er,2),"mult_kama":round(mult_kama,2),
     }
@@ -190,17 +190,14 @@ def giorni_dopo_n(all_dates, data, n):
 
 
 def cammina_periodo_con_exit(etf_data, composizione, data_inizio, data_fine,
-                              capitale_iniziale, all_dates, cooldown_until,
-                              short_return_bug=True):
+                              capitale_iniziale, all_dates, cooldown_until):
     """
     Cammina giorno per giorno nel periodo (data_inizio, data_fine], applicando
-    un exit forzato sulle posizioni LONG (non short, non memoria/XEON) quando
+    un exit forzato sulle posizioni LONG (non memoria/XEON) quando
     prezzo < KAMA e KAMA in discesa — stessa condizione simmetrica usata per
     il segnale S2 su IWMO, applicata al singolo titolo.
     Il capitale liberato da un exit forzato confluisce nel rendimento di
-    XEON.MI fino alla fine del periodo corrente. Le posizioni short seguono
-    lo stesso comportamento di oggi (nessuna modifica di ambito — vedi nota
-    sul bug is_short in sospeso).
+    XEON.MI fino alla fine del periodo corrente.
     Aggiorna 'cooldown_until' in place. Ritorna (capitale_finale, eventi_exit).
     """
     giorni = [d for d in all_dates if data_inizio < d <= data_fine]
@@ -208,7 +205,6 @@ def cammina_periodo_con_exit(etf_data, composizione, data_inizio, data_fine,
         return capitale_iniziale, []
 
     pesi = {c["ticker"]: c["peso"] / 100 for c in composizione}
-    is_short = {c["ticker"]: c.get("is_short", False) for c in composizione}
     cat = {c["ticker"]: c.get("cat", "") for c in composizione}
     usciti = set()
     eventi = []
@@ -238,12 +234,11 @@ def cammina_periodo_con_exit(etf_data, composizione, data_inizio, data_fine,
             prezzo = cl[-1]
             pp = prev_prices.get(t)
             r = (prezzo - pp) / pp if (pp and pp > 0) else 0.0
-            if is_short.get(t) and short_return_bug: r = -r   # bug noto, preservato di default — vedi param short_return_bug
             ret_giorno += peso * r
             prev_prices[t] = prezzo
 
-            # Controllo exit forzato — solo posizioni long "vere" (non short, non cash)
-            if (not is_short.get(t)) and cat.get(t) != "monetario":
+            # Controllo exit forzato — solo posizioni long "vere" (non cash)
+            if cat.get(t) != "monetario":
                 kn, kp, kd = calc_kama(cl)
                 if kn is not None and kd is not None and prezzo < kn and kd < 0:
                     usciti.add(t)
@@ -262,8 +257,8 @@ def cammina_periodo_con_exit(etf_data, composizione, data_inizio, data_fine,
 
 
 # ── BACKTEST ──────────────────────────────────────────────────────────────────
-def run_backtest(etf_data, universo_long, universo_short, n_max,
-                 backtest_start, oggi, label="", abilita_short=True):
+def run_backtest(etf_data, universo_long, n_max,
+                 backtest_start, oggi, label=""):
     all_dates = sorted(set(
         d for data in etf_data.values()
         for d in data.get("dates",[])
@@ -294,11 +289,7 @@ def run_backtest(etf_data, universo_long, universo_short, n_max,
         n_seg, seg = calc_segnali_iwmo(cl_iwmo)
         storia_segnali.append({"data":rdate,**seg})
         ql = QUOTA_LONG[min(n_seg,3)]
-        qs = QUOTA_SHORT[min(n_seg,3)]
         qx = QUOTA_XEON[min(n_seg,3)]
-        if not abilita_short:
-            qx = qx + qs   # la quota short confluisce in cash
-            qs = 0.0
 
         # Score long
         cand_long = []
@@ -308,7 +299,7 @@ def run_backtest(etf_data, universo_long, universo_short, n_max,
                 continue  # in cooldown dopo un exit forzato, non rieleggibile
             cl = closes_at(etf_data, t, rdate)
             if len(cl) < 130: continue
-            sc, ind = calc_score(cl, is_short=False)
+            sc, ind = calc_score(cl)
             if sc is None: continue
             cat = etf.get("cat","")
             if cat == "leva_3x": sc = round(sc / 3, 2)
@@ -351,25 +342,6 @@ def run_backtest(etf_data, universo_long, universo_short, n_max,
         for c in mem_long:
             c["peso"] = round(PESO_MEMORIA * ql, 2)
 
-        # Score short (solo se segnali attivi e abilita_short=True)
-        top_short = []
-        if abilita_short and n_seg > 0 and universo_short:
-            cand_short = []
-            for etf in universo_short:
-                t = etf["ticker"]
-                cl = closes_at(etf_data, t, rdate)
-                if len(cl) < 60: continue
-                sc, ind = calc_score(cl, is_short=True)
-                if sc is None: continue
-                cand_short.append({"ticker":t,"nome":etf.get("nome",t),"cat":"short",
-                                   "sub":etf.get("sub",""),"is_short":True,"score":sc,
-                                   "price":cl[-1],**ind})
-            cand_short.sort(key=lambda x: x["score"], reverse=True)
-            top_short = [c for c in cand_short if c["score"]>0][:3]
-            tot_ws = sum(c["score"]**PESO_EXP for c in top_short) or 1
-            for c in top_short:
-                c["peso"] = round(c["score"]**PESO_EXP / tot_ws * qs * 100, 2)
-
         # XEON
         pos_xeon = []
         if qx > 0:
@@ -379,7 +351,7 @@ def run_backtest(etf_data, universo_long, universo_short, n_max,
                          "peso":round(qx*100,2),"price":cl_x[-1] if cl_x else None,
                          "mom6m":None,"mom3m":None,"mom1m":None,"er":1.0,"kama":None,"kama_dir":0}]
 
-        composizione = top_long + mem_long + top_short + pos_xeon
+        composizione = top_long + mem_long + pos_xeon
 
         # Rinormalizza pesi al 100%
         tot_p = sum(c["peso"] for c in composizione) or 1
@@ -408,7 +380,7 @@ def run_backtest(etf_data, universo_long, universo_short, n_max,
         comp_prec = comp_att
         comp_att  = composizione
         versioni.append({"data":rdate,"n_segnali":n_seg,"segnali":seg,
-                         "quota_az":round(ql*100),"quota_short":round(qs*100),
+                         "quota_az":round(ql*100),
                          "quota_xeon":round(qx*100),"composizione":composizione,
                          "capitale":round(capitale,2)})
 
@@ -489,7 +461,7 @@ def run_backtest(etf_data, universo_long, universo_short, n_max,
     pps=defaultdict(list)
     for v in versioni:
         if v["data"] in rendimenti: pps[str(v["n_segnali"])].append(rendimenti[v["data"]])
-    labels_step={"0":"100% long","1":"70% long","2":"30% long","3":"100% XEON/short"}
+    labels_step={"0":"100% long","1":"70% long","2":"30% long","3":"100% XEON"}
     perf_step={ns:{"media_sett":round(sum(r)/len(r),3),"n":len(r),
                    "positivi":sum(1 for x in r if x>0),"label":labels_step.get(ns,"")}
                for ns,r in pps.items()}
@@ -513,7 +485,6 @@ def run_backtest(etf_data, universo_long, universo_short, n_max,
         "rendimenti":rendimenti,"equity_mensile":equity_mensile,
         "storia_segnali":storia_slim,"n_rebalancing":len(versioni),
         "n_etf_universo_long":len(universo_long),
-        "n_etf_universo_short":len(universo_short),
         "segnali_oggi":storia_slim[-1] if storia_slim else {},
         "exit_forzati":exit_forzati_log,
         "cooldown_attivo":{t:d for t,d in cooldown_until.items() if d >= oggi},
