@@ -8,22 +8,15 @@ Benchmark: IWMO.MI
 import json, math, datetime, time
 from pathlib import Path
 from collections import defaultdict
-from engine import (fetch_yahoo, closes_at, calc_segnali_iwmo, calc_score,
+from engine import (fetch_yahoo, closes_at, calc_segnali_iwmo,
                     calc_kama, calc_er, calc_mom, genera_azione,
                     save_json, calc_bm_perf,
                     cammina_periodo_con_exit, COOLDOWN_GIORNI,
-                    BACKTEST_START, BENCHMARK, BENCHMARK2, CAPITALE,
-                    REBAL_DAYS, QUOTA_LONG, QUOTA_SHORT, QUOTA_XEON)
+                    BACKTEST_START, BENCHMARK, BENCHMARK2, BENCHMARK3, CAPITALE,
+                    REBAL_DAYS, QUOTA_LONG, QUOTA_XEON)
 
 BASE_DIR = Path(__file__).parent
 OUT_FILE = BASE_DIR / "data" / "linea_timing.json"
-
-UNIVERSO_SHORT = [
-    {"ticker":"3USS.MI","nome":"WT S&P 500 3x Short",   "cat":"short","sub":"SHORT_US"},
-    {"ticker":"SC3S.MI","nome":"S&P 500 3x Short",      "cat":"short","sub":"SHORT_US"},
-    {"ticker":"3EUS.MI","nome":"Euro Stoxx 50 3x Short","cat":"short","sub":"SHORT_EU"},
-    {"ticker":"3M7S.MI","nome":"MSCI G7 3x Short",      "cat":"short","sub":"SHORT_G7"},
-]
 
 def run_backtest_timing(etf_data, backtest_start, oggi):
     all_dates = sorted(set(
@@ -46,7 +39,7 @@ def run_backtest_timing(etf_data, backtest_start, oggi):
             capitale_prima = capitale
             capitale, eventi_exit = cammina_periodo_con_exit(
                 etf_data, comp_att, prev_date, rdate, capitale, all_dates,
-                cooldown_until, short_return_bug=False)
+                cooldown_until)
             rendimenti[rdate] = round((capitale/capitale_prima - 1) * 100, 4)
             if eventi_exit:
                 exit_forzati_log.extend(eventi_exit)
@@ -54,8 +47,7 @@ def run_backtest_timing(etf_data, backtest_start, oggi):
         cl_iwmo = closes_at(etf_data, BENCHMARK, rdate)
         n_seg, seg = calc_segnali_iwmo(cl_iwmo)
         storia_segnali.append({"data":rdate,**seg})
-        ql=QUOTA_LONG[min(n_seg,3)]; qs=QUOTA_SHORT[min(n_seg,3)]; qx=QUOTA_XEON[min(n_seg,3)]
-        qx = qx + qs; qs = 0.0   # short disattivato: quota confluisce in XEON
+        ql=QUOTA_LONG[min(n_seg,3)]; qx=QUOTA_XEON[min(n_seg,3)]
 
         # In cooldown dopo un exit forzato: IWMO resta fuori, la sua quota va in XEON
         if cooldown_until.get(BENCHMARK, "") >= rdate:
@@ -76,25 +68,6 @@ def run_backtest_timing(etf_data, backtest_start, oggi):
                 "mom1m":calc_mom(cl_iwmo,21),"er":round(er,3),
                 "kama":round(kn,4) if kn else None,"kama_dir":kd,
             })
-
-        # Short disattivato — vedi qs=0 sopra; blocco mantenuto ma inerte per riuso futuro
-        top_short = []
-        if qs > 0 and n_seg > 0:
-            cand_short=[]
-            for etf in UNIVERSO_SHORT:
-                t=etf["ticker"]; cl=closes_at(etf_data,t,rdate)
-                if len(cl)<60: continue
-                sc,ind=calc_score(cl,is_short=True)
-                if sc is None: continue
-                cand_short.append({"ticker":t,"nome":etf["nome"],"cat":"short",
-                                   "sub":etf["sub"],"is_short":True,"score":sc,
-                                   "price":cl[-1],**ind})
-            cand_short.sort(key=lambda x:x["score"],reverse=True)
-            top_short=[c for c in cand_short if c["score"]>0][:2]
-            tot_ws=sum(c["score"]**1.5 for c in top_short) or 1
-            for c in top_short:
-                c["peso"]=round(c["score"]**1.5/tot_ws*qs*100,2)
-            composizione.extend(top_short)
 
         # XEON
         if qx > 0:
@@ -130,12 +103,10 @@ def run_backtest_timing(etf_data, backtest_start, oggi):
                 lv=["100% IWMO — nessun segnale","70% IWMO — S1 attivo",
                     "30% IWMO — 2 segnali","0% IWMO — uscita totale"]
                 c["commento"]=lv[min(n_seg,3)]
-            else:
-                c["azione"]="SHORT"; c["commento"]=f"Short attivo — {n_seg} segnali IWMO"
 
         comp_att=composizione
         versioni.append({"data":rdate,"n_segnali":n_seg,"segnali":seg,
-                         "quota_iwmo":round(ql*100),"quota_short":round(qs*100),
+                         "quota_iwmo":round(ql*100),
                          "quota_xeon":round(qx*100),"composizione":composizione,
                          "capitale":round(capitale,2)})
 
@@ -235,8 +206,7 @@ def main():
         try: run_number=json.loads(OUT_FILE.read_text()).get("run_number",0)+1
         except: pass
 
-    tickers=({BENCHMARK,BENCHMARK2,"XEON.MI"} |
-             {e["ticker"] for e in UNIVERSO_SHORT})
+    tickers=({BENCHMARK,BENCHMARK2,BENCHMARK3,"XEON.MI"})
     print(f"\n[1/3] Download {len(tickers)} ticker...")
     etf_data={}
     for t in sorted(tickers):
@@ -256,22 +226,24 @@ def main():
     print(f"\n[3/3] Benchmark...")
     bm1=calc_bm_perf(BENCHMARK,etf_data,BACKTEST_START)
     bm2=calc_bm_perf(BENCHMARK2,etf_data,BACKTEST_START)
+    bm3=calc_bm_perf(BENCHMARK3,etf_data,BACKTEST_START)
     op1=round(risultato["performance_totale_pct"]-bm1,2) if bm1 else None
     op2=round(risultato["performance_totale_pct"]-bm2,2) if bm2 else None
+    op3=round(risultato["performance_totale_pct"]-bm3,2) if bm3 else None
     if bm1: print(f"  IWMO: {bm1:+.1f}% | Outperf: {op1:+.1f}pp")
 
     output={
         "generated":datetime.datetime.utcnow().isoformat(),
         "version":"linea_timing_1.0","run_number":run_number,
         "linea":"Timing","descrizione":"Solo IWMO + XEON con segnali KAMA (short disattivato)",
-        "benchmark":BENCHMARK,"benchmark2":BENCHMARK2,
-        "benchmark_perf":bm1,"benchmark2_perf":bm2,
-        "outperformance":op1,"outperformance2":op2,
+        "benchmark":BENCHMARK,"benchmark2":BENCHMARK2,"benchmark3":BENCHMARK3,
+        "benchmark_perf":bm1,"benchmark2_perf":bm2,"benchmark3_perf":bm3,
+        "outperformance":op1,"outperformance2":op2,"outperformance3":op3,
         "batte_benchmark":risultato["performance_totale_pct"]>bm1 if bm1 else None,
         **risultato,
     }
     save_json(output,OUT_FILE)
-    print(f"\n  Posizione: {seg['quota_az_pct']}% IWMO | {round((QUOTA_SHORT[min(n_seg,3)]+QUOTA_XEON[min(n_seg,3)])*100)}% XEON (short disattivato)")
+    print(f"\n  Posizione: {seg['quota_az_pct']}% IWMO | {round(QUOTA_XEON[min(n_seg,3)]*100)}% XEON (short disattivato)")
 
 if __name__=="__main__":
     main()
