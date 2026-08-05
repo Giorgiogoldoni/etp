@@ -92,6 +92,7 @@ canvas{display:block;width:100%}
   <h1>COMPASS <span>ETP</span> — <span id="linea-label" style="color:var(--ink)">—</span></h1>
   <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
     <a href="index.html" class="nav-link">← Dashboard</a>
+    <a href="regole.pdf" target="_blank" class="nav-link">📄 Regole</a>
     <a href="linea.html?l=wt"      class="nav-link" id="nav-wt">WT</a>
     <a href="linea.html?l=2"       class="nav-link" id="nav-2">L2</a>
     <a href="linea.html?l=3"       class="nav-link" id="nav-3">L3</a>
@@ -109,6 +110,7 @@ canvas{display:block;width:100%}
 
     <div class="tabs">
       <button class="tab active" onclick="showTab('portafoglio')">🗂 Portafoglio</button>
+      <button class="tab" onclick="showTab('ytd')">📆 Da inizio anno</button>
       <button class="tab" onclick="showTab('rendimenti')">📅 Rendimenti</button>
       <button class="tab" onclick="showTab('rischio')">📉 Rischio</button>
       <button class="tab" onclick="showTab('segnali')">🚦 Segnali IWMO</button>
@@ -116,6 +118,7 @@ canvas{display:block;width:100%}
 
     <!-- PORTAFOGLIO -->
     <div class="tab-panel active" id="tab-portafoglio">
+      <div id="situazione-box" style="font-size:12px;margin-bottom:12px;padding:10px 12px;background:#fafbfc;border:1px solid var(--rule);border-radius:4px"></div>
       <div style="display:grid;grid-template-columns:1fr auto;gap:20px;align-items:start">
         <div>
           <div class="sec" style="padding-top:0;border-top:none">Composizione corrente</div>
@@ -144,6 +147,17 @@ canvas{display:block;width:100%}
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- YTD -->
+    <div class="tab-panel" id="tab-ytd">
+      <div class="sec" style="padding-top:0;border-top:none">Gestione da inizio anno</div>
+      <div class="kpi-grid" id="ytd-kpi-grid"></div>
+      <div class="sec">Confronto singoli ETF da inizio anno (base 100)</div>
+      <div id="ytd-chart-status" style="font-size:11px;color:var(--dim);margin-bottom:8px">Caricamento serie storiche...</div>
+      <canvas id="c-ytd" height="280" style="margin-bottom:8px"></canvas>
+      <div id="ytd-legend" style="display:flex;gap:14px;flex-wrap:wrap;font-family:monospace;font-size:11px;margin-bottom:16px"></div>
+      <div style="font-size:10.5px;color:var(--dim)">Clicca su un ticker in "Portafoglio" per aprire il grafico dettagliato del singolo ETF.</div>
     </div>
 
     <!-- RENDIMENTI -->
@@ -181,7 +195,8 @@ canvas{display:block;width:100%}
   </div>
   <div id="err" class="err" style="display:none"></div>
 </main>
-
+<script>const CHART_BASE = 'https://giorgiogoldoni.github.io/etp/data/charts/';</script>
+<script src="chart_widget.js"></script>
 <script>
 const BASE='https://giorgiogoldoni.github.io/etp/data/';
 const fmt=(n,d=1)=>n==null?'—':(n>=0?'+':'')+n.toFixed(d)+'%';
@@ -212,10 +227,11 @@ document.getElementById('linea-label').textContent=lInfo.label;
 document.getElementById('linea-label').style.color=lInfo.col;
 
 function showTab(id){
-  const ids=['portafoglio','rendimenti','rischio','segnali'];
+  const ids=['portafoglio','ytd','rendimenti','rischio','segnali'];
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',ids[i]===id));
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active',p.id==='tab-'+id));
   if(id==='rischio') setTimeout(()=>{drawEquity();drawDD();drawSharpe();},50);
+  if(id==='ytd') loadYtdChart();
 }
 
 // Calcola data ingresso dal JSON
@@ -290,6 +306,22 @@ function renderPortafoglio(d, seg, ns){
   const dataIngMap=calcDataIngresso(versioni);
   const oggi=new Date();
 
+  // Situazione + cosa è consigliato, in chiaro (migrato dalla dashboard)
+  const exitLog=(d.exit_forzati||[]).slice(-5).reverse();
+  const cooldown=d.cooldown_attivo||{};
+  const azioni=comp.filter(c=>c.azione).reduce((acc,c)=>{acc[c.azione]=(acc[c.azione]||0)+1;return acc;},{});
+  const consiglio = ns>=2
+    ? `Esposizione ridotta per i segnali IWMO attivi (${ns}/3) — la quota difensiva (XEON) sta assorbendo la maggior parte del rischio.`
+    : (azioni['ATTENZIONE']>0 ? `${azioni['ATTENZIONE']} posizione/i in ATTENZIONE — score in indebolimento, da monitorare al prossimo ribilanciamento.` : `Nessun segnale di allarme rilevante al momento.`);
+  let sitHtml = `<strong>Situazione:</strong> ${consiglio}`;
+  if(Object.keys(cooldown).length){
+    sitHtml += `<div style="color:#b45309;margin-top:6px">⚠ In cooldown ora: ${Object.entries(cooldown).map(([t,dt])=>`${t} (fino al ${dt})`).join(', ')}</div>`;
+  }
+  if(exitLog.length){
+    sitHtml += `<div style="color:var(--dim);margin-top:4px">Ultimi exit forzati: ${exitLog.map(e=>`${e.ticker} il ${e.data}`).join(' · ')}</div>`;
+  }
+  document.getElementById('situazione-box').innerHTML = sitHtml;
+
   const cb=document.getElementById('comp-tbody');
   comp.forEach(p=>{
     const ing=p.data_ingresso||dataIngMap[p.ticker]?.data||'—';
@@ -305,7 +337,7 @@ function renderPortafoglio(d, seg, ns){
     const varColor=varPct==null?'var(--dim)':varPct>=0?'var(--green)':'var(--red)';
 
     cb.innerHTML+=`<tr class="${isXeon?'xeon-row':isShort?'short-row':''}">
-      <td style="font-family:monospace;font-weight:600;font-size:12px">${p.ticker}</td>
+      <td style="font-family:monospace;font-weight:600;font-size:12px">${isXeon?p.ticker:`<a href="#" onclick="event.preventDefault();openChartModal('${p.ticker}','${(p.nome||'').replace(/'/g,"\\'")}')" style="color:var(--etp);text-decoration:none;border-bottom:1px dotted var(--etp)">${p.ticker} 📈</a>`}</td>
       <td style="font-size:11px;color:var(--dim)">${(p.nome||'').replace('iShares','iSh').replace('WisdomTree','WT')}</td>
       <td><span class="cat-badge ${p.cat||''}">${(p.cat||'').replace(/_/g,' ')}</span></td>
       <td style="font-family:monospace;font-weight:600">${(p.peso||0).toFixed(1)}%</td>
@@ -547,6 +579,97 @@ window.addEventListener('resize',()=>{
     drawEquity();drawDD();drawSharpe();
   }
 });
+
+// ── DA INIZIO ANNO ────────────────────────────────────────────────────────────
+function computeYtdKpis(d){
+  const annoCorr = new Date().getFullYear().toString();
+  const eq = (d.equity_mensile||[]).filter(e=>e.mese && e.mese <= annoCorr+'-12');
+  const eqAnno = eq.filter(e=>e.mese.startsWith(annoCorr));
+  const baseIdx = eq.findIndex(e=>e.mese.startsWith(annoCorr));
+  const base = baseIdx>0 ? eq[baseIdx-1].valore : (eqAnno[0]?.valore||null);
+  const ultimo = eqAnno.length ? eqAnno[eqAnno.length-1].valore : null;
+  const perfYtd = (base && ultimo) ? (ultimo/base-1)*100 : null;
+
+  const riwA=(d.rend_iwmo_anno||{})[annoCorr];
+  const nRebalYtd = (d.versioni||[]).filter(v=>(v.data||'').startsWith(annoCorr)).length;
+
+  return {perfYtd, riwA, nRebalYtd, annoCorr};
+}
+
+function renderYtdKpis(d){
+  const k = computeYtdKpis(d);
+  const delta = (k.perfYtd!=null && k.riwA!=null) ? k.perfYtd-k.riwA : null;
+  const kpis=[
+    {k:'Anno in corso', v:k.annoCorr, sub:'gestione dal 1° gennaio'},
+    {k:'Performance YTD', v:k.perfYtd!=null?fmt(k.perfYtd):'—', cls:(k.perfYtd||0)>=0?'pos':'neg', sub:lInfo.label},
+    {k:'IWMO YTD', v:k.riwA!=null?fmt(k.riwA):'—', cls:(k.riwA||0)>=0?'pos':'neg', sub:'benchmark'},
+    {k:'Delta YTD', v:delta!=null?fmt(delta):'—', cls:(delta||0)>=0?'pos':'neg', sub:'linea vs IWMO'},
+    {k:'Ribilanciamenti', v:k.nRebalYtd, sub:'da inizio anno'},
+  ];
+  const kg=document.getElementById('ytd-kpi-grid');
+  kg.innerHTML='';
+  kpis.forEach(x=>{kg.innerHTML+=`<div class="kpi"><div class="k">${x.k}</div><div class="v ${x.cls||''}">${x.v}</div><div class="sub">${x.sub}</div></div>`;});
+}
+
+let ytdLoaded=false;
+async function loadYtdChart(){
+  renderYtdKpis(DATA);
+  if(ytdLoaded) return;
+  const status=document.getElementById('ytd-chart-status');
+  const comp=(DATA.composizione_corrente||[]).filter(p=>p.ticker!=='XEON.MI');
+  const tickers=[...new Set(['IWMO.MI', ...comp.map(p=>p.ticker)])];
+  const annoCorr=new Date().getFullYear();
+  const jan1=new Date(annoCorr,0,1).getTime();
+
+  const serie=[];
+  for(const t of tickers){
+    try{
+      const j = await getTickerChartJson(t);
+      const bars=(j.d||[]).filter(b=>b[0]>=jan1);
+      if(bars.length<2) continue;
+      const c0=bars[0][4];
+      const pts=bars.map(b=>({ts:b[0], v: c0>0 ? (b[4]/c0*100) : null}));
+      serie.push({ticker:t, label:t==='IWMO.MI'?'IWMO (benchmark)':t, pts,
+                  col: t==='IWMO.MI'?'#dc2626':null, dash: t==='IWMO.MI'});
+    }catch(e){ /* ticker senza storico in data/charts/, si salta */ }
+  }
+  ytdLoaded=true;
+  if(!serie.length){
+    status.textContent='Nessuna serie storica disponibile in data/charts/ per gli ETF di questa linea.';
+    return;
+  }
+  status.textContent=`${serie.length} strumenti · base 100 = 1° gennaio ${annoCorr}`;
+  drawYtdChart(serie);
+}
+
+const YTD_PALETTE=['#2563eb','#16a34a','#7c3aed','#b45309','#0891b2','#db2777','#65a30d','#ea580c','#0284c7','#9333ea'];
+function drawYtdChart(serie){
+  const r=initC('c-ytd',280); if(!r) return;
+  const{ctx,W,H}=r;
+  const PAD={l:50,r:20,t:12,b:26},cw=W-PAD.l-PAD.r,ch=H-PAD.t-PAD.b;
+  const allV=serie.flatMap(s=>s.pts.map(p=>p.v)).filter(v=>v!=null);
+  const minV=Math.min(...allV,100)*0.98, maxV=Math.max(...allV,100)*1.02;
+  const maxLen=Math.max(...serie.map(s=>s.pts.length));
+  const sx=i=>PAD.l+i/(maxLen-1)*cw, sy=v=>PAD.t+(1-(v-minV)/(maxV-minV))*ch;
+
+  ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
+  for(let i=0;i<=4;i++){const y=PAD.t+ch*i/4;ctx.strokeStyle='#f0f0f0';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(PAD.l,y);ctx.lineTo(W-PAD.r,y);ctx.stroke();ctx.fillStyle='#999';ctx.font='9px monospace';ctx.fillText((maxV-(maxV-minV)*i/4).toFixed(0),4,y+4);}
+  ctx.strokeStyle='#e5e5e5';ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(PAD.l,sy(100));ctx.lineTo(W-PAD.r,sy(100));ctx.stroke();ctx.setLineDash([]);
+
+  let ci=0;
+  const legend=document.getElementById('ytd-legend'); legend.innerHTML='';
+  serie.forEach(s=>{
+    const col = s.col || YTD_PALETTE[ci++ % YTD_PALETTE.length];
+    ctx.strokeStyle=col; ctx.lineWidth=s.dash?1.5:2;
+    if(s.dash) ctx.setLineDash([5,3]);
+    ctx.beginPath();
+    s.pts.forEach((p,i)=>{ if(p.v==null) return; i===0?ctx.moveTo(sx(i),sy(p.v)):ctx.lineTo(sx(i),sy(p.v)); });
+    ctx.stroke();
+    ctx.setLineDash([]);
+    const last=s.pts[s.pts.length-1]?.v;
+    legend.innerHTML+=`<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:2px;background:${col};display:inline-block"></span>${s.label} <span style="color:${last>=100?'#16a34a':'#dc2626'}">${last!=null?(last-100>=0?'+':'')+(last-100).toFixed(1)+'%':'—'}</span></span>`;
+  });
+}
 
 load();
 </script>
