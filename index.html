@@ -73,7 +73,10 @@ canvas{display:block;width:100%}
 <body>
 <header>
   <h1>COMPASS <span>ETP</span></h1>
-  <span class="ts" id="ts">—</span>
+  <div style="display:flex;align-items:center;gap:10px">
+    <a href="regole.pdf" target="_blank" style="font-size:11px;font-family:monospace;color:var(--dim);text-decoration:none;padding:5px 10px;border:1px solid #e0e0e0;border-radius:4px">📄 Regole</a>
+    <span class="ts" id="ts">—</span>
+  </div>
 </header>
 <main>
   <div id="loading" class="loading">Caricamento 6 linee...</div>
@@ -97,6 +100,8 @@ canvas{display:block;width:100%}
         <th>Descrizione</th>
         <th>Performance</th>
         <th>vs IWMO</th>
+        <th>vs VWCE</th>
+        <th>vs IS3S</th>
         <th>MDD</th>
         <th>Sharpe 6M</th>
         <th>Turnover</th>
@@ -105,6 +110,9 @@ canvas{display:block;width:100%}
       </tr></thead>
       <tbody id="compare-tbody"></tbody>
     </table>
+    <div style="font-size:10.5px;color:var(--dim);margin:-6px 0 14px">
+      VWCE = Vanguard FTSE All-World (VWCE.DE) · IS3S = iShares Edge MSCI World Value Factor, ISIN noto anche come IWVL (IS3S.DE) — benchmark di confronto, non guidano i segnali
+    </div>
 
     <!-- EQUITY CURVE SOVRAPPOSTA -->
     <div class="sec">Equity curve — tutte le linee vs IWMO</div>
@@ -247,6 +255,7 @@ function renderCompare(){
       <td style="color:var(--dim)">—</td>
       <td style="color:var(--dim)">—</td>
       <td style="color:var(--dim)">—</td>
+      <td style="color:var(--dim)">—</td>
       <td style="color:var(--dim)">benchmark</td>
     </tr>`;
   }
@@ -254,86 +263,21 @@ function renderCompare(){
   LINEE.forEach(l=>{
     const d = DATI[l.id]; if(!d) return;
     const n = d.segnali_oggi?.n_segnali ?? (d.storia_segnali?.[d.storia_segnali.length-1]?.n_segnali ?? 0);
-    const op = d.outperformance;
-    tb.innerHTML+=`<tr class="linea-row" style="cursor:pointer" onclick="toggleLineaRow('${l.id}')">
-      <td><span class="linea-dot" style="background:${l.col}"></span><strong>${l.label}</strong> <span style="font-size:10px;color:var(--dim)" id="car-${l.id}">▸</span></td>
+    const op = d.outperformance, op2 = d.outperformance2, op3 = d.outperformance3;
+    tb.innerHTML+=`<tr class="linea-row" style="cursor:pointer" onclick="location.href='linea.html?l=${l.id}'">
+      <td><span class="linea-dot" style="background:${l.col}"></span><strong>${l.label}</strong> <span style="font-size:10px;color:var(--dim)">→</span></td>
       <td style="font-size:11px;color:var(--dim)">${l.desc}</td>
       <td class="${(d.performance_totale_pct||0)>=0?'pos':'neg'}">${fmt(d.performance_totale_pct)}</td>
       <td class="${(op||0)>=0?'pos':'neg'}">${op!=null?fmt(op):'—'}</td>
+      <td class="${(op2||0)>=0?'pos':'neg'}" style="font-size:11px">${op2!=null?fmt(op2):'—'}</td>
+      <td class="${(op3||0)>=0?'pos':'neg'}" style="font-size:11px">${op3!=null?fmt(op3):'—'}</td>
       <td class="neg">${fmt(d.max_drawdown)}</td>
       <td>${d.sharpe_6m?d.sharpe_6m.toFixed(2):'n.d.'}</td>
       <td style="font-family:monospace">${d.turnover_medio!=null?d.turnover_medio.toFixed(0)+'%':'—'}</td>
       <td><span class="badge-seg" style="background:${SC[Math.min(n,3)]}">${n}/3</span></td>
       <td>${d.batte_benchmark?'<span class="badge-ok">✅ SÌ</span>':'<span class="badge-no">❌ NO</span>'}</td>
-    </tr>
-    <tr id="exp-${l.id}" style="display:none">
-      <td colspan="9" style="background:#fafbfc;padding:0">
-        <div id="exp-body-${l.id}" style="padding:14px 18px"></div>
-      </td>
     </tr>`;
   });
-}
-
-// ── RIGA ESPANDIBILE: composizione + exit forzati + grafico su richiesta ──
-function toggleLineaRow(id){
-  const row = document.getElementById('exp-'+id);
-  const car = document.getElementById('car-'+id);
-  if(!row) return;
-  const opening = row.style.display==='none';
-  row.style.display = opening ? '' : 'none';
-  if(car) car.textContent = opening ? '▾' : '▸';
-  if(opening) renderLineaExpand(id);
-}
-
-function renderLineaExpand(id){
-  const d = DATI[id]; const l = LINEE.find(x=>x.id===id);
-  const body = document.getElementById('exp-body-'+id);
-  if(!d || !body) return;
-
-  const comp = (d.composizione_corrente||[]).slice().sort((a,b)=>b.peso-a.peso);
-  const exitLog = (d.exit_forzati||[]).slice(-5).reverse();
-  const cooldown = d.cooldown_attivo||{};
-
-  let html = `<div style="font-size:11px;color:var(--dim);margin-bottom:10px">${OVERLAY_NOTE}</div>`;
-
-  // Situazione + cosa è consigliato, in chiaro
-  const nSeg = d.segnali_oggi?.n_segnali ?? 0;
-  const azioni = comp.filter(c=>c.azione).reduce((acc,c)=>{acc[c.azione]=(acc[c.azione]||0)+1;return acc;},{});
-  const consiglio = nSeg>=2
-    ? `Esposizione ridotta per i segnali IWMO attivi (${nSeg}/3) — la quota difensiva (short/cash) sta assorbendo la maggior parte del rischio.`
-    : (azioni['ATTENZIONE']>0 ? `${azioni['ATTENZIONE']} posizione/i in ATTENZIONE — score in indebolimento, da monitorare al prossimo ribilanciamento.` : `Nessun segnale di allarme rilevante al momento.`);
-  html += `<div style="font-size:12px;margin-bottom:12px;padding:8px 10px;background:#fff;border:1px solid #eee;border-radius:6px">
-    <strong>Situazione:</strong> ${consiglio}
-  </div>`;
-
-  if(exitLog.length || Object.keys(cooldown).length){
-    html += `<div style="font-size:11px;margin-bottom:12px">`;
-    if(Object.keys(cooldown).length){
-      html += `<div style="color:#b45309;margin-bottom:4px">⚠ In cooldown ora: ${Object.entries(cooldown).map(([t,dt])=>`${t} (fino al ${dt})`).join(', ')}</div>`;
-    }
-    if(exitLog.length){
-      html += `<div style="color:var(--dim)">Ultimi exit forzati: ${exitLog.map(e=>`${e.ticker} il ${e.data}`).join(' · ')}</div>`;
-    }
-    html += `</div>`;
-  }
-
-  html += `<table style="width:100%;border-collapse:collapse;font-size:11.5px">
-    <thead><tr style="color:var(--dim);text-align:left">
-      <th style="padding:4px 6px">ETF</th><th>Peso</th><th>Score</th><th>Azione</th><th>Commento</th><th></th>
-    </tr></thead><tbody>`;
-  comp.forEach(c=>{
-    const azCol = c.azione==='VENDI'?'#cf222e':c.azione==='ATTENZIONE'?'#b45309':c.azione==='ACQUISTA'||c.azione==='RAFFORZA'?'#1a7f37':'var(--dim)';
-    html += `<tr style="border-top:1px solid #f0f0f0">
-      <td style="padding:5px 6px"><strong>${c.ticker}</strong> ${c.is_short?'<span style="color:#cf222e;font-size:10px">SHORT</span>':''}<br><span style="font-size:10px;color:var(--dim)">${c.nome||''}</span></td>
-      <td>${c.peso?.toFixed(1)}%</td>
-      <td>${c.score!=null?c.score.toFixed(1):'—'}</td>
-      <td style="color:${azCol};font-weight:600">${c.azione||'—'}</td>
-      <td style="font-size:10.5px;color:var(--dim)">${c.commento||''}</td>
-      <td><button onclick="event.stopPropagation();openChartModal('${c.ticker}','${(c.nome||'').replace(/'/g,"\\'")}')" style="font-size:10.5px;padding:3px 8px;border:1px solid #d0d7de;border-radius:5px;background:#fff;cursor:pointer">📈 Grafico</button></td>
-    </tr>`;
-  });
-  html += `</tbody></table>`;
-  body.innerHTML = html;
 }
 
 // ── EQUITY CURVE SOVRAPPOSTA ──────────────────────────────────────────────────
