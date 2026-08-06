@@ -108,6 +108,7 @@ function ensureChartModalDOM(){
           <button class="cw-tf-btn" data-tf="3m" onclick="cwSetTF(this)">3m</button>
           <button class="cw-tf-btn" data-tf="6m" onclick="cwSetTF(this)">6m</button>
           <button class="cw-tf-btn" data-tf="1y" onclick="cwSetTF(this)">1a</button>
+          <button class="cw-tf-btn" data-tf="2y" onclick="cwSetTF(this)">2a</button>
           <button id="cwCloseBtn" onclick="closeChartModal()">✕ Chiudi</button>
         </div>
         <div id="cwInfoBar">
@@ -182,6 +183,7 @@ function tfParams(tf){
   if(tf==='1m')return{hourly:false,n:21};
   if(tf==='3m')return{hourly:false,n:63};
   if(tf==='6m')return{hourly:false,n:126};
+  if(tf==='2y')return{hourly:false,n:502};
   return{hourly:false,n:252};
 }
 
