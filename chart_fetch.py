@@ -267,7 +267,7 @@ def process_ticker(info):
     symbol = info['y']
     try:
         tk = yf.Ticker(symbol)
-        hist_d = tk.history(period='1y', interval='1d', timeout=20)
+        hist_d = tk.history(period='2y', interval='1d', timeout=20)
         if hist_d.empty or len(hist_d) < 60:
             return None
 
