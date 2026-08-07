@@ -276,12 +276,14 @@ function render(d){
   const sh6=d.sharpe_6m, sh12=d.sharpe_12m;
 
   // KPI
-  const op=d.outperformance;
+  const op=d.outperformance, op2=d.outperformance2, op3=d.outperformance3;
   const kpis=[
     {k:'Linea',      v:lInfo.label, cls:'etp', sub:d.descrizione||''},
     {k:'Performance',v:fmt(d.performance_totale_pct),cls:(d.performance_totale_pct||0)>=0?'pos':'neg',sub:'da '+d.backtest_start},
     {k:'Capitale',   v:fmtC(d.capitale_attuale),cls:'',sub:'su €100k iniziali'},
     {k:'vs IWMO',    v:op!=null?fmt(op):'—',cls:(op||0)>=0?'pos':'neg',sub:'outperformance'},
+    {k:'vs VWCE',    v:op2!=null?fmt(op2):'—',cls:(op2||0)>=0?'pos':'neg',sub:'Vanguard FTSE All-World'},
+    {k:'vs IS3S',    v:op3!=null?fmt(op3):'—',cls:(op3||0)>=0?'pos':'neg',sub:'MSCI World Value Factor (IWVL)'},
     {k:'MDD',        v:fmt(d.max_drawdown),cls:'neg',sub:'max drawdown'},
     {k:'Sharpe 6M',  v:sh6?sh6.toFixed(2):'n.d.',cls:'',sub:'ultime 26 settimane'},
     {k:'Sharpe 12M', v:sh12?sh12.toFixed(2):'n.d.',cls:'',sub:'ultime 52 settimane'},
